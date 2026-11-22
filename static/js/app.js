@@ -505,6 +505,24 @@ async function shareSingleNow(id) {
 }
 
 // AI İçerik Üret
+async function scanAllVideosAI() {
+    if (!confirm("Kuyruktaki tüm videolar taranacak ve ürünlerine özel başlık, açıklama ve etiketler yenilenecektir. Onaylıyor musunuz?")) return;
+    
+    alert("Videolar taranıyor, lütfen birkaç saniye bekleyin...");
+    try {
+        const res = await fetch("/api/videos/scan-all-ai", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+            alert("✅ " + data.message);
+            loadVideos();
+        } else {
+            alert("Hata: " + data.message);
+        }
+    } catch (e) {
+        alert("Tarama hatası: " + e);
+    }
+}
+
 async function generateAIForVideo(id) {
     try {
         const res = await fetch(`/api/videos/${id}/generate-ai`, { method: 'POST' });
