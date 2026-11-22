@@ -248,58 +248,14 @@
                 </div>
             </div>
 
-            <!-- Sekme Butonları (Yöntem 1: Authorize, Yöntem 2: Token) -->
-            <div class="flex border-b border-slate-800 text-xs font-bold">
-                <button id="tabBtnAuthorize" onclick="switchConnectTab('authorize')" class="flex-1 py-2.5 text-center text-red-400 border-b-2 border-red-500 flex items-center justify-center gap-1.5">
-                    <i class="fas fa-shield-halved"></i> 1. Yöntem: Pinterest ile Authorize Et (Önerilen)
-                </button>
-                <button id="tabBtnToken" onclick="switchConnectTab('token')" class="flex-1 py-2.5 text-center text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center justify-center gap-1.5">
-                    <i class="fas fa-key"></i> 2. Yöntem: Access Token
-                </button>
-            </div>
-
-            <!-- 1. YÖNTEM: AUTHORIZE (OAUTH 2.0) -->
-            <div id="tabContentAuthorize" class="space-y-4 text-xs">
-                <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 space-y-2">
-                    <div class="font-bold text-emerald-400 flex items-center gap-1.5">
-                        <i class="fas fa-circle-check"></i> Neden Authorize En İyisi?
-                    </div>
-                    <p class="text-[11px] text-slate-400">
-                        Pinterest resmi giriş ekranını açar ve izinleri (<code class="text-emerald-400">pins:write</code> dahil) otomatik olarak eksiksiz onaylar. Manuel token üretip kutucuk seçmenize gerek kalmaz!
-                    </p>
-                    <div class="p-2 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-300">
-                        📌 <strong>Pinterest Developers'ta Yapmanız Gereken Tek Şey:</strong>
-                        <br>Uygulamanızın ayarlarındaki <strong>"Redirect URIs"</strong> kısmına şu adresi ekleyin:
-                        <br><code class="text-amber-400 select-all font-mono">http://localhost:8080/oauth/callback</code>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block font-semibold text-slate-300 mb-1">Pinterest App ID (Client ID)</label>
-                        <input type="text" id="inputOAuthAppId" placeholder="Örn: 1540123456789" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-red-500">
-                    </div>
-                    <div>
-                        <label class="block font-semibold text-slate-300 mb-1">Pinterest App Secret</label>
-                        <input type="password" id="inputOAuthAppSecret" placeholder="••••••••••••••••" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-red-500">
-                    </div>
-                </div>
-
-                <button onclick="startPinterestAuthorize()" class="w-full py-3 rounded-xl font-bold text-sm bg-red-600 hover:bg-red-500 text-white shadow-xl shadow-red-600/30 transition flex items-center justify-center gap-2">
-                    <i class="fab fa-pinterest text-lg"></i>
-                    <span>Pinterest ile Giriş Yap & Authorize Et</span>
-                </button>
-            </div>
-
-            <!-- 2. YÖNTEM: ACCESS TOKEN -->
-            <div id="tabContentToken" class="hidden space-y-4 text-xs">
-                <!-- Adım Adım Rehber -->
-                <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 space-y-2">
+            <!-- Pinterest Token Girişi (Sade ve Doğrudan) -->
+            <div class="space-y-4 text-xs">
+                <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 space-y-1.5">
                     <div class="font-bold text-amber-400 flex items-center gap-1.5">
-                        <i class="fas fa-circle-info"></i> Manuel Token İle Bağlanma
+                        <i class="fas fa-key"></i> Pinterest Access Token
                     </div>
                     <p class="text-[11px] text-slate-400">
-                        <a href="https://developers.pinterest.com/apps/" target="_blank" class="text-red-400 hover:underline font-bold">developers.pinterest.com/apps</a> adresinden <strong>pins:write</strong> kutucuğunu işaretleyerek aldığınız tokenı buraya yapıştırabilirsiniz.
+                        Pinterest Access Token'ınızı buraya yapıştırıp kaydedin. Sistem Pinterest'e doğrudan bağlanacak ve tüm videolarınızı otomatik olarak paylaşacaktır.
                     </p>
                 </div>
 
@@ -310,9 +266,9 @@
                     <input type="password" id="inputModalAccessToken" placeholder="pina_..." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-xs focus:outline-none focus:border-red-500 font-mono">
                 </div>
 
-                <button id="btnConnectPinterest" onclick="connectPinterestAccount()" class="w-full py-2.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition flex items-center justify-center gap-2">
-                    <i class="fas fa-check text-emerald-400"></i>
-                    <span>Tokenı Doğrula & Kaydet</span>
+                <button id="btnConnectPinterest" onclick="connectPinterestAccount()" class="w-full py-3 rounded-xl font-bold text-xs bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-check"></i>
+                    <span>Pinterest'i Bağla & Kaydet</span>
                 </button>
             </div>
 
