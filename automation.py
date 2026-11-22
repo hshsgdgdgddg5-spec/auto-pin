@@ -59,7 +59,8 @@ class AutomationEngine:
         video_id = video["id"]
         update_video(video_id, status="processing")
         
-        product_name = video.get("product_name") or clean_filename_to_product(video["filename"])
+        prod = clean_filename_to_product(video["filename"])
+        product_name = video.get("product_name") or (prod[0] if isinstance(prod, tuple) else prod)
         title = video.get("title")
         description = video.get("description")
         tags = video.get("tags")
@@ -69,10 +70,17 @@ class AutomationEngine:
         # Eğer başlık/açıklama boşsa otomatik yapay zeka ile ürüne özel üret
         if not title or not description or not tags:
             add_log(f"[{product_name}] için yapay zeka ile ürüne özel başlık ve etiketler üretiliyor...", "INFO")
-            ai_data = generate_product_content(product_name, settings.get("gemini_api_key"))
+            ai_data = generate_product_content(
+                video["filename"],
+                api_key=settings.get("gemini_api_key"),
+                video_id=video_id,
+                video_path=video.get("filepath")
+            )
             title = ai_data["title"]
             description = ai_data["description"]
             tags = ai_data["tags"]
+            if ai_data.get("product_name"):
+                product_name = ai_data["product_name"]
             update_video(video_id, title=title, description=description, tags=tags, product_name=product_name)
 
         add_log(f"Video Pinterest'e yükleniyor: '{title}'", "INFO")
