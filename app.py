@@ -106,7 +106,8 @@ async def oauth_login(request):
         return HTMLResponse("<script>alert('Lütfen App ID (Client ID) girin.'); window.location.href='/';</script>")
 
     host = request.headers.get("host", "localhost:8080")
-    scheme = "http"
+    proto = request.headers.get("x-forwarded-proto")
+    scheme = proto if proto else ("https" if ("onrender.com" in host or "railway" in host) else "http")
     redirect_uri = f"{scheme}://{host}/oauth/callback"
 
     url = PinterestClient.get_oauth_url(app_id, redirect_uri)
@@ -135,7 +136,8 @@ async def oauth_callback(request):
     app_secret = settings.get("pinterest_app_secret", "").strip()
 
     host = request.headers.get("host", "localhost:8080")
-    scheme = "http"
+    proto = request.headers.get("x-forwarded-proto")
+    scheme = proto if proto else ("https" if ("onrender.com" in host or "railway" in host) else "http")
     redirect_uri = f"{scheme}://{host}/oauth/callback"
 
     ok, token_data = PinterestClient.exchange_code_for_token(app_id, app_secret, code, redirect_uri)
