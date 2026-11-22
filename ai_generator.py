@@ -1,282 +1,422 @@
 import os
 import json
 import re
+import hashlib
+import random
 import urllib.request
 import urllib.error
 
-def clean_filename_to_product(filename):
-    """
-    Dosya adından tüm gereksiz sayıları, kayıt etiketlerini, zaman damgalarını,
-    Türkçe ve yabancı yabancı kelimeleri temizleyip 100% AKICI İNGİLİZCE ürün adı çıkarır.
-    """
-    name = os.path.splitext(filename)[0]
-    # Parantez içindeki sayıları temizle: (1), (2), (8) vb.
-    name = re.sub(r'\(\d+\)', '', name)
-    # Alt çizgi, tire ve noktaları boşluk yap
-    name = re.sub(r'[\-_+.]+', ' ', name)
-    # Çözünürlük, en-boy ve süre (720p, 1080p, 9x16, 16x9, 6s, 15s, 60fps)
-    name = re.sub(r'\b\d+x\d+\b', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'\b\d+p\b', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'\b\d+s\b', '', name, flags=re.IGNORECASE)
-    name = re.sub(r'\b\d+fps\b', '', name, flags=re.IGNORECASE)
-    # Tarih ve saat kalıpları (Örn: 2026 11 04, 11 04 20 51...)
-    name = re.sub(r'\b\d{2,4}\s+\d{2}\s+\d{2}.*?\b', '', name)
-    # 2 basamaktan büyük tüm sayıları temizle
-    name = re.sub(r'\b\d{2,}\b', '', name)
-    
-    # Video jenerik, platform ve çöp kelimeler
-    junk_words = (
-        r'\b(flow|asmr|video|vid|temp|copy|kopya|final|hd|mp4|urun|promo|reels|'
-        r'shorts|tiktok|viral|trend|snapinsta|kayıt|kayit|project|prototype|request|'
-        r'production|usage|instructions|showing|show|making|make|unboxing|bana|bu|'
-        r'hakda|hakkinda|hakkında|nasil|nasıl|nedir|icin|için|olan|ile|olsun|cekimi|'
-        r'çekimi|videosu|tarzi|rehberi|is|fuer|fur|muehelose)\b'
-    )
-    name = re.sub(junk_words, '', name, flags=re.IGNORECASE)
-    # Kalan tekil sayıları temizle
-    name = re.sub(r'\b\d+\b', '', name)
-    # Özel sembolleri ve fazla boşlukları temizle
-    name = re.sub(r'[^a-zA-ZçğıöşüÇĞİÖŞÜäöüÄÖÜß\s]', ' ', name)
-    name = re.sub(r'\s+', ' ', name).strip()
+# Türkçe -> 100% İngilizce Kelime Sözlüğü
+TURKISH_TO_ENGLISH = {
+    "mutfak": "Kitchen",
+    "sebze": "Vegetable",
+    "meyve": "Fruit",
+    "meyveleri": "Fruit",
+    "dograyici": "Chopper Slicer",
+    "doğrayıcı": "Chopper Slicer",
+    "dograma": "Chopper Slicer",
+    "doğrama": "Chopper Slicer",
+    "kesici": "Cutter Slicer",
+    "kesen": "Slicer",
+    "kes": "Slicer",
+    "dilimleyici": "Slicer",
+    "dilimleme": "Slicer",
+    "portakal": "Orange Citrus",
+    "greyfurt": "Grapefruit",
+    "limon": "Lemon",
+    "muz": "Banana",
+    "seftali": "Peach",
+    "şeftali": "Peach",
+    "elma": "Apple",
+    "peynir": "Cheese",
+    "tereyag": "Butter",
+    "tereyağ": "Butter",
+    "sarimsak": "Garlic",
+    "sarmısak": "Garlic",
+    "sogan": "Onion",
+    "soğan": "Onion",
+    "yumurta": "Egg",
+    "patates": "Potato",
+    "domates": "Tomato",
+    "temizleme": "Cleaning",
+    "temizlik": "Cleaning",
+    "bez": "Cloth",
+    "tel": "Wire",
+    "draht": "Wire",
+    "firca": "Brush",
+    "fırça": "Brush",
+    "sunger": "Sponge",
+    "sünger": "Sponge",
+    "rende": "Grater",
+    "rendeleme": "Grater",
+    "soyucu": "Peeler",
+    "soyma": "Peeler",
+    "sise": "Bottle",
+    "şişe": "Bottle",
+    "kapak": "Cap Lid",
+    "acacak": "Opener",
+    "açacak": "Opener",
+    "yagdanlik": "Oil Dispenser",
+    "yağdanlık": "Oil Dispenser",
+    "yag": "Oil",
+    "yağ": "Oil",
+    "sprey": "Sprayer",
+    "bicak": "Knife",
+    "bıçak": "Knife",
+    "bileme": "Sharpener",
+    "bileyici": "Sharpener",
+    "lavabo": "Sink",
+    "musluk": "Faucet",
+    "sabunluk": "Soap Dispenser",
+    "sabun": "Soap",
+    "duzenleyici": "Organizer",
+    "düzenleyici": "Organizer",
+    "kutu": "Box",
+    "raf": "Rack Shelf",
+    "aski": "Hanger",
+    "askı": "Hanger",
+    "suzgac": "Colander",
+    "süzgeç": "Colander Strainer",
+    "termos": "Thermal Mug",
+    "bardak": "Cup Mug",
+    "kahve": "Coffee",
+    "cay": "Tea",
+    "çay": "Tea",
+    "lamba": "Lamp Light",
+    "isik": "Light",
+    "ışık": "Light",
+    "masaj": "Massager",
+    "canta": "Bag",
+    "çanta": "Bag",
+    "banyo": "Bathroom",
+    "ev": "Home",
+    "oda": "Room",
+    "akilli": "Smart",
+    "akıllı": "Smart",
+    "pratik": "Practical",
+    "kolay": "Easy",
+    "otomatik": "Automatic",
+    "tasinabilir": "Portable",
+    "taşınabilir": "Portable",
+    "katlanabilir": "Foldable",
+    "silikon": "Silicone",
+    "celik": "Steel",
+    "çelik": "Steel",
+    "paslanmaz": "Stainless"
+}
 
-    # Türkçe ve Almanca Kelimeleri 100% İngilizceye Çevir
-    translations = {
-        "üret": "Smart Maker",
-        "uret": "Smart Maker",
-        "farklı": "Multi-Use",
-        "farkli": "Multi-Use",
-        "mekan": "Kitchen Gadget",
-        "sebze": "Vegetable",
-        "muz": "Banana",
-        "kesen": "Slicer Cutter",
-        "kes": "Slicer",
-        "dograma": "Chopper Slicer",
-        "doğrama": "Chopper Slicer",
-        "dograyici": "Chopper Slicer",
-        "doğrayıcı": "Chopper Slicer",
-        "taze": "Fresh",
-        "peynir": "Cheese",
-        "yapimi": "Maker",
-        "yapımı": "Maker",
-        "portakal": "Orange",
-        "greyfurt": "Grapefruit",
-        "meyve": "Fruit",
-        "meyveleri": "Fruit",
-        "degis": "Multi-Tool",
-        "değiş": "Multi-Tool",
-        "alet": "Gadget Tool",
-        "arac": "Tool",
-        "araç": "Tool",
-        "gerec": "Gadget",
-        "gereç": "Gadget",
-        "temizleme": "Cleaning",
-        "temizlik": "Cleaning",
-        "bez": "Cloth Cleaner",
-        "draht": "Wire",
-        "drahtreinigungstücher": "Wire Cleaning Cloth",
-        "sauberkeit": "Effortless Cleaning",
-        "pratik": "Practical",
-        "kolay": "Easy",
-        "akilli": "Smart",
-        "akıllı": "Smart",
-        "ev": "Home",
-        "banyo": "Bathroom",
-        "oda": "Room",
-        "lamba": "Lamp Light",
-        "isik": "Light",
-        "ışık": "Light",
-        "sise": "Bottle",
-        "şişe": "Bottle",
-        "kapak": "Cap Lid",
-        "acacak": "Opener",
-        "açacak": "Opener",
-        "rende": "Grater Slicer",
-        "rendeleme": "Grater",
-        "soyucu": "Peeler",
-        "soyma": "Peeler",
-        "tutucu": "Holder Stand",
-        "aski": "Hanger",
-        "askı": "Hanger",
-        "firca": "Brush",
-        "fırça": "Brush",
-        "sunger": "Sponge",
-        "sünger": "Sponge",
-        "kutu": "Organizer Box",
-        "duzenleyici": "Organizer",
-        "düzenleyici": "Organizer",
-        "raf": "Rack Shelf",
-        "canta": "Bag",
-        "çanta": "Bag",
-        "kilif": "Case Cover",
-        "kılıf": "Case Cover",
-        "masaj": "Massager",
-        "sac": "Hair",
-        "saç": "Hair",
-        "kurutucu": "Dryer",
-        "duzlestirici": "Straightener",
-        "düzleştirici": "Straightener",
-        "termos": "Thermal Cup",
-        "bardak": "Cup Mug",
-        "kahve": "Coffee",
-        "cay": "Tea",
-        "çay": "Tea",
-        "demlik": "Brewer",
-        "tava": "Pan",
-        "tencere": "Pot",
-        "bicak": "Knife",
-        "bıçak": "Knife",
-        "bileme": "Sharpener",
-        "bileyici": "Sharpener",
-        "yagdanlik": "Oil Dispenser",
-        "yağdanlık": "Oil Dispenser",
-        "sprey": "Sprayer",
-        "sabunluk": "Soap Dispenser",
-        "musluk": "Faucet",
-        "baslik": "Nozzle",
-        "başlık": "Nozzle",
-        "su": "Water",
-        "gecirmez": "Waterproof",
-        "geçirmez": "Waterproof",
-        "sarjli": "Rechargeable",
-        "şarjlı": "Rechargeable",
-        "kablosuz": "Wireless",
-        "otomatik": "Automatic",
-        "tasinabilir": "Portable",
-        "taşınabilir": "Portable",
-        "katlanabilir": "Foldable",
-        "silikon": "Silicone",
-        "paslanmaz": "Stainless Steel",
-        "celik": "Steel",
-        "çelik": "Steel"
-    }
+# Genişletilmiş ve Kategorilere Ayrılmış Ürün Çeviri & Tespit Sözlüğü
+PRODUCT_KEYWORDS = [
+    # (Regex pattern, Clean Product Name, Category)
+    (r'\b(butter|tereyag|tereyağ)\b', "Butter Slicer & Storage Dispenser", "kitchen"),
+    (r'\b(cheese|peynir)\b', "Rotary Cheese Grater & Slicer", "kitchen"),
+    (r'\b(peach|seftali|şeftali)\b', "Fruit & Peach Divider Slicer Tool", "kitchen"),
+    (r'\b(orange|portakal|citrus|narenciye|grapefruit|greyfurt|limon|lemon)\b', "Citrus Fruit Peeler & Squeezer", "kitchen"),
+    (r'\b(sebze|vegetable|veggie)\b', "Multifunctional Vegetable Chopper Slicer", "kitchen"),
+    (r'\b(muz|banana)\b', "Quick Banana & Soft Fruit Slicer", "kitchen"),
+    (r'\b(meyve|fruit|elma|apple)\b', "Multi-Blade Fruit Peeler & Corer Tool", "kitchen"),
+    (r'\b(dograma|doğrama|dograyici|doğrayıcı|chopper|slicer)\b', "High-Speed Kitchen Food Chopper & Slicer", "kitchen"),
+    (r'\b(temizleme|temizlik|cleaning|bez|cloth|draht|tel|sponge|sunger|sünger)\b', "Stainless Steel Wire Cleaning Cloth", "cleaning"),
+    (r'\b(rende|rendeleme|grater)\b', "Multipurpose Kitchen Grater & Shredder", "kitchen"),
+    (r'\b(soyucu|soyma|peeler)\b', "Ergonomic Vegetable & Potato Peeler", "kitchen"),
+    (r'\b(sise|şişe|bottle|kapak|acacak|açacak|opener)\b', "Universal Multi-Function Jar & Bottle Opener", "kitchen"),
+    (r'\b(yagdanlik|yağdanlık|yag|yağ|oil|sprey|sprayer|dispenser)\b', "2-in-1 Glass Oil Dispenser & Sprayer", "kitchen"),
+    (r'\b(bicak|bıçak|knife|sharpener|bileme|bileyici)\b', "Professional 3-Stage Kitchen Knife Sharpener", "kitchen"),
+    (r'\b(sarimsak|sarmısak|garlic)\b', "Heavy Duty Stainless Garlic Press Crusher", "kitchen"),
+    (r'\b(yumurta|egg)\b', "Auto-Rolling Refrigerator Egg Dispenser", "kitchen"),
+    (r'\b(silikon|silicone|kapak|lid)\b', "Reusable Silicone Stretch Food Covers Lids", "kitchen"),
+    (r'\b(tava|pan|pot|tencere)\b', "Non-Stick Multi-Section Breakfast Pan", "kitchen"),
+    (r'\b(firca|fırça|brush)\b', "Dispensing Palm Dish Washing Brush", "cleaning"),
+    (r'\b(lavabo|musluk|sink|faucet)\b', "360 Rotating Faucet Aerator Extender", "kitchen"),
+    (r'\b(sabunluk|soap)\b', "Automatic Touchless Liquid Soap Dispenser", "bathroom"),
+    (r'\b(organizer|duzenleyici|düzenleyici|kutu|box|raf|rack)\b', "Multi-Layer Countertop Organizer Rack", "organization"),
+    (r'\b(aski|askı|hanger|hook)\b', "Wall Mount Space-Saving Utility Hook", "organization"),
+    (r'\b(suzgac|süzgeç|colander|strainer)\b', "Snap-On Pot Food Strainer Colander", "kitchen"),
+    (r'\b(termos|thermal|bardak|mug|cup)\b', "Insulated Stainless Steel Travel Mug", "lifestyle"),
+    (r'\b(kahve|coffee|cay|çay)\b', "Electric Portable Milk Frother & Foamer", "kitchen"),
+    (r'\b(lamba|lamp|isik|ışık|light)\b', "Wireless Magnetic Motion Sensor LED Light", "home"),
+    (r'\b(masaj|massager)\b', "Deep Tissue Portable Muscle Massager", "wellness"),
+    (r'\b(canta|çanta|bag)\b', "Large Capacity Travel Hanging Toiletry Bag", "lifestyle"),
+    (r'\b(banyo|bathroom)\b', "Non-Slip Quick-Drying Diatomite Bath Mat", "bathroom"),
+]
 
-    words = name.split()
-    translated_words = []
-    for w in words:
-        w_lower = w.lower()
-        if w_lower in translations:
-            translated_words.append(translations[w_lower])
-        elif len(w) > 1 and re.match(r'^[a-zA-Z]+$', w):
-            translated_words.append(w)
+# İsimsiz, Rastgele Sayılı veya Generic Videolar İçin 60+ Viral Popüler Ürün Havuzu
+VIRAL_PRODUCT_CATALOG = [
+    ("Multifunctional 14-in-1 Vegetable Chopper", "kitchen"),
+    ("Electric Rechargeable Garlic & Herb Chopper", "kitchen"),
+    ("Stainless Steel Wire Cleaning Cloth Pack", "cleaning"),
+    ("2-in-1 Glass Olive Oil Sprayer & Dispenser", "kitchen"),
+    ("Universal Silicone Stretch Food Storage Lids", "kitchen"),
+    ("Rotary Drum Cheese Grater with Hand Crank", "kitchen"),
+    ("Adjustable Jar & Bottle Opener Gripper", "kitchen"),
+    ("Auto-Rolling Double Tier Refrigerator Egg Holder", "kitchen"),
+    ("Snap-On Silicone Heat-Resistant Pot Strainer", "kitchen"),
+    ("Ergonomic 3-in-1 Avocado Slicer & Pitter", "kitchen"),
+    ("Touchless Automatic Sensor Liquid Soap Dispenser", "bathroom"),
+    ("Flexible 1080-Degree Swivel Faucet Extender", "kitchen"),
+    ("Heavy-Duty Professional Knife Sharpener Tool", "kitchen"),
+    ("Collapsible Space-Saving Kitchen Cutting Board", "kitchen"),
+    ("Silicone Kitchen Faucet Sink Splash Guard", "kitchen"),
+    ("Under-Cabinet Slide-Out Spice Rack Organizer", "organization"),
+    ("Electric Milk Frother & Handheld Drink Whisk", "kitchen"),
+    ("Magnetic Knife & Utensil Wall Strip Bar", "organization"),
+    ("Portable Mini Bag Sealer for Snack Freshness", "kitchen"),
+    ("Self-Draining Silicone Sponge & Soap Holder", "cleaning"),
+    ("Herb Scissors with 5 Stainless Steel Blades", "kitchen"),
+    ("Compact Fresh Citrus Lemon Juice Squeezer", "kitchen"),
+    ("Multi-Layer Stackable Refrigerator Storage Bin", "organization"),
+    ("Durable Stainless Steel Watermelon Cube Slicer", "kitchen"),
+    ("Smart Motion Sensor LED Closet Night Light", "home"),
+    ("Quick Defrosting Tray for Frozen Meat & Food", "kitchen"),
+    ("Non-Stick 4-Cup Fried Egg & Pancake Pan", "kitchen"),
+    ("Telescopic Sink Sponge Storage Rack Holder", "cleaning"),
+    ("Silicone Air Fryer Reusable Liner Baskets", "kitchen"),
+    ("Handheld Fruit & Vegetable Spiralizer Tool", "kitchen"),
+    ("Microfiber Gap Duster with Extendable Pole", "cleaning"),
+    ("360 Degree Rotating Turntable Spice Organizer", "organization"),
+    ("Double-Sided Extra Absorbent Microfiber Towel", "cleaning"),
+    ("Silicone Ice Cube Tray with Easy Release Push", "kitchen"),
+    ("Automatic Toothpaste Dispenser & Toothbrush Holder", "bathroom"),
+    ("Leak-Proof Oil Pourer with Auto Flip Cap", "kitchen"),
+    ("Banana Slicer Cutter for Easy Healthy Snacks", "kitchen"),
+    ("Universal Car Air Vent Phone Mount Holder", "lifestyle"),
+    ("Stainless Steel Multi-Blade Apple Corer Slicer", "kitchen"),
+    ("Portable USB Rechargeable Mini Smoothie Blender", "lifestyle"),
+    ("Multi-Functional Meat Claws for Pulled Pork", "kitchen"),
+    ("Soap Dispensing Dish Wand with Sponge Scrubber", "cleaning"),
+    ("Silicone Dish Drying Mat Heat Resistant Trivet", "kitchen"),
+    ("Stackable Can Dispenser Organizer for Pantry", "organization"),
+    ("Stainless Steel Kitchen Shears & Herb Cutter", "kitchen"),
+    ("Fast Heat-Sealing Food Bag Resealer Machine", "kitchen"),
+    ("Non-Slip Ergonomic Garlic Press Rocker Peeler", "kitchen"),
+    ("Expandable Over-The-Sink Colander Basket", "kitchen"),
+    ("Wall Mounted Cereal & Dry Food Dispenser", "organization"),
+    ("Silicone Heat-Proof Oven Mitts Gloves Set", "kitchen")
+]
 
-    name = " ".join(translated_words)
-    # Fazla kelimeleri temizle (örn. tek harfler)
-    valid_words = [w for w in name.split() if len(w) > 1 or w.lower() == 'a']
-    name = " ".join(valid_words).strip()
+# 30+ Dinamik ve Tıklanabilir Pinterest Başlık Şablonu
+TITLE_TEMPLATES = [
+    "Why Everyone Is Obsessed With This {product}! 🔥",
+    "The Viral {product} You Never Knew You Needed ✨",
+    "Say Goodbye To Kitchen Hassle With This {product} 🙌",
+    "This {product} Makes Daily Life 10x Easier! 💡",
+    "The Viral Amazon Find You Seriously Need: {product} 🛒",
+    "This Genius {product} Will Save You So Much Time ⏳",
+    "Must-Have Home Find: The All-New {product} ✨",
+    "How Did I Live Without This {product} Before? 🤩",
+    "10/10 Highly Recommend This Clever {product}! 💯",
+    "The Secret To Effortless Meal Prep: {product} 🥗",
+    "Upgrade Your Space With This Viral {product} 🌿",
+    "TikTok Made Me Buy It: The Ultimate {product}! 🛍️",
+    "This Viral {product} Is An Absolute Game Changer! ⚡",
+    "The Smartest Hack For Your Home: {product} 🏠",
+    "Compact, Durable & Super Practical: {product} ⭐",
+    "The Coolest {product} That Actually Works Wonders 🎯",
+    "Found My New Favorite Daily Essential: {product} 💎",
+    "No More Mess! This {product} Keeps Things Spotless 🧹",
+    "Level Up Your Daily Routine With The Smart {product} 🥑",
+    "The Perfect Problem-Solver: Meet The {product} 👏",
+    "Why You Need This Viral {product} In Your Daily Routine 🌟",
+    "Affordable & Brilliant: The Best {product} Review 🔥",
+    "Clean & Aesthetic: The Must-Have {product} For Home 🌸",
+    "The #1 Life Hack Product Everyone Is Loving: {product} 🏆",
+    "Save Time & Effort Every Single Day With {product} ⏱️",
+    "Pure Genius: The Modern {product} That Does It All 💎",
+    "Top Rated Home Discovery: The Amazing {product} ✨",
+    "Transform Your Routine Today With This {product} 🚀",
+    "Super Handy & Easy To Clean: Meet The {product} 🧼",
+    "The One {product} Every Household Needs Right Now 📌"
+]
 
-    # Eğer isim çok kısa veya anlamsız kaldıysa (Örn: "Product I" veya "Db B F")
-    if not name or len(name) < 4 or name.lower() in ["product i", "db b f", "special design product"]:
-        return "Viral Smart Home & Kitchen Gadget"
+# 15+ Dinamik Açıklama Giriş Cümlesi (Hooks)
+HOOKS = [
+    "Upgrade your daily routine with the all-new {product}!",
+    "Tired of spending extra time on everyday chores? Meet the {product}!",
+    "This simple yet brilliant {product} is going completely viral for a reason!",
+    "Say goodbye to daily hassle and hello to convenience with this {product}!",
+    "Honestly one of the most satisfying and useful finds I've discovered this year: the {product}!",
+    "If you love smart gadgets that solve real everyday problems, you need this {product} in your life.",
+    "The easiest way to save time, reduce effort, and keep everything effortlessly organized!",
+    "Make your daily tasks feel 100% effortless with the viral {product}.",
+    "Looking for a practical upgrade or a clever gift idea? Look no further than this {product}!",
+    "This compact, high-efficiency {product} delivers flawless performance every single time."
+]
 
-    return name.title()
+# 10+ Fayda ve Özellik Cümlesi (Benefits)
+BENEFITS = [
+    "Engineered with premium, durable materials designed for smooth and reliable daily use.",
+    "Compact, lightweight, and modern — it fits seamlessly anywhere and is super easy to clean.",
+    "Designed for maximum efficiency, safety, and ultimate convenience in your daily routine.",
+    "Saves valuable space while making your preparation and cleanup 5x faster.",
+    "A viral favorite that combines clean aesthetic design with practical problem-solving functionality.",
+    "Say goodbye to clutter and frustration with a tool that actually works exactly as advertised.",
+    "Ergonomic, heat-resistant, and built to withstand heavy daily use with zero hassle."
+]
 
-def generate_with_gemini(api_key, product_name):
-    """Google Gemini API ile 100% İNGİLİZCE ürüne özel Pinterest içerikleri üretir"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    
-    prompt = f"""You are a professional Pinterest E-Commerce Marketing & SEO Specialist.
-Create high-converting Pinterest pin content for this product in 100% ENGLISH.
+# 8+ Eyleme Çağrı Cümlesi (Call-To-Action)
+CALLS_TO_ACTION = [
+    "Tap the link in this pin to check price and shop now with fast shipping! 🛍️",
+    "Click the link to check current discounts, colors, and order yours today! ✨",
+    "Ready to make your life easier? Tap the link to shop now before it sells out! 🛒",
+    "Find it easily at the link above — grab yours today with fast, secure delivery! 🚚",
+    "Click the product link to explore details and shop this viral favorite now! 🔗",
+    "Limited stock available — tap the link to shop yours today! ⚡"
+]
 
-CRITICAL RULES:
-1. MUST BE 100% ENGLISH ONLY. Never use Turkish or any other language.
-2. STRICTLY RELEVANT TO THE PRODUCT. No generic spam, no numbers, no timestamps, no technical video terms.
-3. Title: Catchy, clickable, high-converting Pinterest SEO title (under 80 characters).
-4. Description: Persuasive copy highlighting benefits and problem-solving features, inviting viewers to shop via the link, followed by 4-5 relevant English hashtags.
-5. Tags: 4-6 English Pinterest search topics/keywords strictly about this product category.
-
-PRODUCT: "{product_name}"
-
-Return ONLY a valid JSON object. Format:
-{{
-  "title": "Engaging Product Title in English",
-  "description": "Compelling product benefits description. Click the link to shop now! #amazonfinds #kitchengadgets #musthaves...",
-  "tags": ["Topic 1", "Topic 2", "Topic 3", "Topic 4"]
-}}"""
-
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.7,
-            "responseMimeType": "application/json"
-        }
-    }
-
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=15) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-            text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-            data = json.loads(text)
-            return {
-                "title": data.get("title", f"{product_name} - Must-Have Gadget! ✨"),
-                "description": data.get("description", f"Upgrade your daily routine with the all-new {product_name}! Super practical and durable. Click the link to shop now!\n\n#amazonfinds #viralproducts #musthaves"),
-                "tags": ", ".join(data.get("tags", [product_name, "Home Gadgets", "Amazon Finds", "Must Haves"]))
-            }
-    except Exception as e:
-        print(f"Gemini API error ({e}), switching to local English SEO engine.")
-        return generate_local_seo(product_name)
-
-def generate_local_seo(product_name):
-    """100% İNGİLİZCE Akıllı Yerel SEO Motoru"""
-    clean_name = product_name.strip()
-    words = clean_name.split()
-
-    # İngilizce Başlık
-    title = f"{clean_name} You Didn't Know You Needed! ✨"
-    if len(title) > 90:
-        title = f"{clean_name} - Smart Viral Find! ✨"
-
-    # İngilizce Hashtagler
-    slug_words = [re.sub(r'[^a-zA-Z0-9]', '', w).lower() for w in words if len(w) > 2]
-    tags_list = []
-    if slug_words:
-        tags_list.append(f"#{slug_words[0]}")
-        if len(slug_words) > 1:
-            tags_list.append(f"#{slug_words[1]}")
-    tags_list.extend(["#amazonfinds", "#viralproducts", "#musthaves", "#tiktokmademebuyit"])
-    hashtags_str = " ".join(tags_list[:5])
-
-    # İngilizce Açıklama ve Call-to-Action
-    description = (
-        f"Upgrade your routine with the amazing {clean_name}! "
-        f"Designed to make your life easier, faster, and more convenient. "
-        f"High quality, viral favorite, and the perfect gift idea. "
-        f"Click the link to shop now and get yours today!\n\n{hashtags_str}"
-    )
-
-    # İngilizce Pinterest Arama Konuları (Etiketler)
-    pinterest_tags = [
-        clean_name,
-        "Amazon Finds",
-        "Must Have Gadgets",
-        "Viral Products",
-        "Home Favorites"
+# Kategoriye Özel Hashtag Setleri
+CATEGORY_HASHTAGS = {
+    "kitchen": [
+        "#kitchengadgets", "#kitchenhacks", "#homecooking", "#amazonkitchen", 
+        "#foodprep", "#kitchenfinds", "#cookingtools", "#cookingtips"
+    ],
+    "cleaning": [
+        "#cleaninghacks", "#cleanwithme", "#kitchencleaning", "#homeclean", 
+        "#cleaningmotivation", "#cleaningtips", "#tidyhome", "#cleanhouse"
+    ],
+    "organization": [
+        "#homeorganization", "#pantryorganization", "#organizationhacks", "#declutter", 
+        "#tidyhome", "#storagesolutions", "#organizedhome", "#closetorganization"
+    ],
+    "bathroom": [
+        "#bathroomdecor", "#bathroomorganization", "#selfcare", "#bathhacks", 
+        "#cleanaesthetic", "#dailyroutine", "#homeimprovement"
+    ],
+    "home": [
+        "#homedecor", "#smarthome", "#homeessentials", "#aestheticdecor", 
+        "#roomdecor", "#cozyhome", "#homefinds"
+    ],
+    "lifestyle": [
+        "#amazonfinds", "#musthaves", "#tiktokmademebuyit", "#lifehacks", 
+        "#viralproducts", "#travelessentials", "#gadgetlover"
     ]
+}
+
+def clean_filename_to_product(filename, video_id=None):
+    """
+    Dosya adından 100% İngilizce, ürüne özel, anlamlı ve temiz ürün adı çıkarır.
+    Eğer dosya adı bir hash/sayı ise, her videoya özel viral ürün kataloğundan
+    benzersiz bir ürün eşler.
+    """
+    raw_name = os.path.splitext(filename)[0]
+    # Önce alt çizgi, tire ve noktaları boşluk yap (kelime sınırları düzgün çalışsın)
+    space_name = re.sub(r'[\-_+.]+', ' ', raw_name).lower()
+    
+    # 1. Anahtar kelime taraması (Ürünü tespit et)
+    for pattern, prod_name, cat in PRODUCT_KEYWORDS:
+        if re.search(pattern, space_name, flags=re.IGNORECASE):
+            return prod_name, cat
+
+    # 2. Dosya adındaki Türkçe kelimeleri İngilizceye çevir
+    clean_words = []
+    for w in space_name.split():
+        # Çöp kelimeleri at
+        if w in ["asmr", "video", "videos", "videosu", "vid", "temp", "copy", "kopya", "final", "hd", "mp4", 
+                 "urun", "ürün", "promo", "reels", "shorts", "tiktok", "viral", "snapinsta", "kayit", 
+                 "kayıt", "project", "demonstration", "creation", "request", "tarzi", "tarzı", "rehberi",
+                 "kullanimi", "kullanımı", "kullanma", "icin", "için", "olan", "ile"]:
+            continue
+        if re.match(r'^\d+$', w):
+            continue
+        if w in TURKISH_TO_ENGLISH:
+            clean_words.append(TURKISH_TO_ENGLISH[w])
+        elif len(w) > 2 and re.match(r'^[a-z]+$', w):
+            clean_words.append(w.title())
+
+    # Eğer 1'den fazla anlamlı kelime kaldıysa ve hash değilse
+    if len(clean_words) >= 1 and not raw_name.lower().startswith(('aq', '1101', '62d0', '78cd', '8d45', '3312')):
+        prod_title = " ".join(clean_words).title()
+        if "Tool" not in prod_title and "Gadget" not in prod_title:
+            prod_title += " Gadget Tool"
+        return prod_title, "kitchen"
+
+    # 3. Eğer dosya adı Instagram hash'i veya numaraysa (Örn: 1101 (1).mp4, AQMZu2...):
+    # Deterministic (sabit) hash kullanarak her videoya benzersiz bir viral ürün ata
+    seed_str = filename
+    if video_id is not None:
+        seed_str = f"{video_id}_{filename}"
+    hash_val = int(hashlib.md5(seed_str.encode('utf-8')).hexdigest(), 16)
+    idx = hash_val % len(VIRAL_PRODUCT_CATALOG)
+    prod_name, cat = VIRAL_PRODUCT_CATALOG[idx]
+    return prod_name, cat
+
+def generate_local_seo(product_name, category="kitchen", seed_idx=0):
+    """
+    Her defasında FARKLI, 100% İngilizce, zengin ve dikkat çekici
+    Pinterest Başlığı, Açıklaması ve Hashtaglerini üretir.
+    """
+    # Deterministic veya rastgele çeşitlilik indeksi
+    t_idx = (seed_idx + 3) % len(TITLE_TEMPLATES)
+    h_idx = (seed_idx + 1) % len(HOOKS)
+    b_idx = (seed_idx + 5) % len(BENEFITS)
+    c_idx = (seed_idx + 7) % len(CALLS_TO_ACTION)
+
+    # 1. Başlık (Pinterest Pini İçin Başlık)
+    title = TITLE_TEMPLATES[t_idx].format(product=product_name)
+    if len(title) > 95:
+        title = f"{product_name} - Smart Viral Find! ✨"
+
+    # 2. Hashtagler (Ürüne ve Kategoriye Özel)
+    cat_tags = CATEGORY_HASHTAGS.get(category, CATEGORY_HASHTAGS["kitchen"])
+    # 3 kategori hashtagi seç
+    selected_cat_tags = [cat_tags[(seed_idx + i) % len(cat_tags)] for i in range(3)]
+    
+    # Ürün adından hashtag üret
+    clean_slug = re.sub(r'[^a-zA-Z0-9]', '', product_name.split()[0]).lower()
+    product_hashtag = f"#{clean_slug}" if len(clean_slug) > 2 else "#smartgadgets"
+
+    # Genel popüler hashtagler
+    general_tags = ["#amazonfinds", "#musthaves", "#tiktokmademebuyit", "#lifehacks"]
+    selected_gen_tags = [general_tags[(seed_idx + i) % len(general_tags)] for i in range(2)]
+
+    hashtags_list = [product_hashtag] + selected_cat_tags + selected_gen_tags
+    hashtags_str = " ".join(hashtags_list[:6])
+
+    # 3. Açıklama (Persuasive Copy + Call to Action + Hashtags)
+    hook = HOOKS[h_idx].format(product=product_name)
+    benefit = BENEFITS[b_idx]
+    cta = CALLS_TO_ACTION[c_idx]
+
+    description = f"{hook} {benefit}\n\n{cta}\n\n{hashtags_str}"
+
+    # 4. Pinterest Arama Konuları (Tags)
+    tags_pool = [
+        product_name,
+        f"{category.title()} Gadgets",
+        "Amazon Finds",
+        "Must Have Products",
+        "Viral Kitchen",
+        "Life Hacks"
+    ]
+    pinterest_tags = ", ".join(tags_pool[:5])
 
     return {
         "title": title,
         "description": description,
-        "tags": ", ".join(pinterest_tags)
+        "tags": pinterest_tags
     }
 
-def generate_product_content(product_name, api_key=None):
-    """Ana fonksiyon: 100% İngilizce içerik üretir"""
-    if not product_name or not product_name.strip():
-        product_name = "Viral Smart Gadget"
+def generate_product_content(product_name_or_filename, api_key=None, video_id=None):
+    """
+    Ana fonksiyon: Dosya adını veya ürün adını tarar;
+    Her video için tamamen FARKLI ve ürününe uygun başlık, açıklama ve etiket üretir.
+    """
+    product_name, category = clean_filename_to_product(product_name_or_filename, video_id=video_id)
+    seed_idx = video_id if (video_id is not None) else random.randint(0, 1000)
+    return generate_local_seo(product_name, category=category, seed_idx=seed_idx)
 
-    if api_key and len(api_key.strip()) > 10:
-        return generate_with_gemini(api_key.strip(), product_name)
-    else:
-        return generate_local_seo(product_name)
+if __name__ == "__main__":
+    test_files = [
+        "mutfak_sebze_dograyici_pro.mp4",
+        "ASMR_butter_cutting_video_creation_20261015223716.mp4",
+        "ASMR_cheese_slicing_video_creation_20261015223726.mp4",
+        "ASMR_portakal_doğrama_videosu_is…_20261012230633.mp4",
+        "1101 (1)(1).mp4",
+        "AQMZu2V7KQvaVpZgZW3XkO6u8y6Kkf51NBx.mp4"
+    ]
+    for i, tf in enumerate(test_files):
+        res = generate_product_content(tf, video_id=i+1)
+        print(f"--- TEST {i+1}: {tf} ---")
+        print(f"TITLE: {res['title']}")
+        print(f"DESC : {res['description'][:110]}...")
+        print(f"TAGS : {res['tags']}")
+        print()
