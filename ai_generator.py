@@ -3,6 +3,8 @@ import json
 import re
 import hashlib
 import random
+import subprocess
+import base64
 import urllib.request
 import urllib.error
 
@@ -140,7 +142,7 @@ PRODUCT_KEYWORDS = [
     (r'\b(banyo|bathroom)\b', "Non-Slip Quick-Drying Diatomite Bath Mat", "bathroom"),
 ]
 
-# İsimsiz, Rastgele Sayılı veya Generic Videolar İçin 60+ Viral Popüler Ürün Havuzu
+# 60+ Viral Popüler Ürün Havuzu (Görsel analiz yapılmadığında yedek olarak kullanılır)
 VIRAL_PRODUCT_CATALOG = [
     ("Multifunctional 14-in-1 Vegetable Chopper", "kitchen"),
     ("Electric Rechargeable Garlic & Herb Chopper", "kitchen"),
@@ -198,27 +200,27 @@ VIRAL_PRODUCT_CATALOG = [
 TITLE_TEMPLATES = [
     "Why Everyone Is Obsessed With This {product}! 🔥",
     "The Viral {product} You Never Knew You Needed ✨",
-    "Say Goodbye To Kitchen Hassle With This {product} 🙌",
-    "This {product} Makes Daily Life 10x Easier! 💡",
+    "Say Goodbye To Daily Hassle With This {product} 🙌",
+    "This {product} Makes Life 10x Easier! 💡",
     "The Viral Amazon Find You Seriously Need: {product} 🛒",
     "This Genius {product} Will Save You So Much Time ⏳",
     "Must-Have Home Find: The All-New {product} ✨",
     "How Did I Live Without This {product} Before? 🤩",
     "10/10 Highly Recommend This Clever {product}! 💯",
-    "The Secret To Effortless Meal Prep: {product} 🥗",
+    "The Secret To Effortless Routines: {product} 🥗",
     "Upgrade Your Space With This Viral {product} 🌿",
     "TikTok Made Me Buy It: The Ultimate {product}! 🛍️",
     "This Viral {product} Is An Absolute Game Changer! ⚡",
-    "The Smartest Hack For Your Home: {product} 🏠",
+    "The Smartest Hack For Your Everyday Life: {product} 🏠",
     "Compact, Durable & Super Practical: {product} ⭐",
     "The Coolest {product} That Actually Works Wonders 🎯",
     "Found My New Favorite Daily Essential: {product} 💎",
     "No More Mess! This {product} Keeps Things Spotless 🧹",
     "Level Up Your Daily Routine With The Smart {product} 🥑",
     "The Perfect Problem-Solver: Meet The {product} 👏",
-    "Why You Need This Viral {product} In Your Daily Routine 🌟",
+    "Why You Need This Viral {product} In Your Routine 🌟",
     "Affordable & Brilliant: The Best {product} Review 🔥",
-    "Clean & Aesthetic: The Must-Have {product} For Home 🌸",
+    "Clean & Aesthetic: The Must-Have {product} 🌸",
     "The #1 Life Hack Product Everyone Is Loving: {product} 🏆",
     "Save Time & Effort Every Single Day With {product} ⏱️",
     "Pure Genius: The Modern {product} That Does It All 💎",
@@ -291,6 +293,112 @@ CATEGORY_HASHTAGS = {
     ]
 }
 
+def extract_video_frame(video_path, output_image_path=None, timestamp=2.0):
+    """FFmpeg kullanarak videodan 1 adet net ekran görüntüsü (kare) çıkarır"""
+    if not output_image_path:
+        base, _ = os.path.splitext(video_path)
+        output_image_path = f"{base}_frame.jpg"
+    
+    cmd = [
+        "ffmpeg", "-ss", str(timestamp),
+        "-i", video_path,
+        "-vframes", "1",
+        "-q:v", "2",
+        output_image_path,
+        "-y"
+    ]
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        if os.path.exists(output_image_path) and os.path.getsize(output_image_path) > 1000:
+            return output_image_path
+    except Exception:
+        pass
+    return None
+
+def analyze_video_with_vision(video_path, api_key):
+    """
+    VİDEO GÖRSEL TARAMA MOTORU (Google Gemini 1.5 Flash Vision):
+    Videodan doğrudan 1 kare fotoğraf alır, fotoğraftaki gerçek ürünü tanır
+    ve dosya adına bakmaksızın 100% doğru başlık, açıklama ve etiket üretir!
+    """
+    frame_path = extract_video_frame(video_path)
+    if not frame_path:
+        return None
+
+    try:
+        with open(frame_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        prompt = """Analyze this image extracted from an e-commerce / social media product video.
+Identify exactly what specific product, gadget, or tool is being shown or demonstrated.
+Create viral, high-converting Pinterest pin content in 100% ENGLISH.
+
+CRITICAL RULES:
+1. Identify the EXACT physical product or tool shown (e.g. cucumber slicer, sunglasses holder, wire dishcloth, garlic press, etc.).
+2. Title: Catchy, clickable, high-converting Pinterest SEO title (under 80 characters, with emojis).
+3. Description: Persuasive copy highlighting benefits and problem-solving features, inviting viewers to shop via the link, followed by 5 relevant English hashtags.
+4. Product Link to include: https://findesdecks.com/searchPage?title=Shop%20Now
+5. Tags: 5 English Pinterest search keywords strictly about this specific product.
+
+Return ONLY a valid JSON object:
+{
+  "product_name": "Exact Name of Product",
+  "title": "Engaging Product Title in English",
+  "description": "Compelling description with call to action. Tap the link to shop now!\n\n#tag1 #tag2 #tag3 #tag4 #tag5",
+  "tags": "Keyword 1, Keyword 2, Keyword 3, Keyword 4, Keyword 5"
+}"""
+
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inlineData": {
+                            "mimeType": "image/jpeg",
+                            "data": img_b64
+                        }
+                    }
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 0.5,
+                "responseMimeType": "application/json"
+            }
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            res_json = json.loads(text)
+            
+            # Geçici kareyi temizle
+            try:
+                os.remove(frame_path)
+            except Exception:
+                pass
+                
+            return {
+                "product_name": res_json.get("product_name", "Smart Viral Gadget"),
+                "title": res_json.get("title"),
+                "description": res_json.get("description"),
+                "tags": res_json.get("tags")
+            }
+    except Exception as e:
+        print(f"Vision AI error: {e}")
+        try:
+            os.remove(frame_path)
+        except Exception:
+            pass
+        return None
+
 def clean_filename_to_product(filename, video_id=None):
     """
     Dosya adından 100% İngilizce, ürüne özel, anlamlı ve temiz ürün adı çıkarır.
@@ -298,7 +406,6 @@ def clean_filename_to_product(filename, video_id=None):
     benzersiz bir ürün eşler.
     """
     raw_name = os.path.splitext(filename)[0]
-    # Önce alt çizgi, tire ve noktaları boşluk yap (kelime sınırları düzgün çalışsın)
     space_name = re.sub(r'[\-_+.]+', ' ', raw_name).lower()
     
     # 1. Anahtar kelime taraması (Ürünü tespit et)
@@ -309,7 +416,6 @@ def clean_filename_to_product(filename, video_id=None):
     # 2. Dosya adındaki Türkçe kelimeleri İngilizceye çevir
     clean_words = []
     for w in space_name.split():
-        # Çöp kelimeleri at
         if w in ["asmr", "video", "videos", "videosu", "vid", "temp", "copy", "kopya", "final", "hd", "mp4", 
                  "urun", "ürün", "promo", "reels", "shorts", "tiktok", "viral", "snapinsta", "kayit", 
                  "kayıt", "project", "demonstration", "creation", "request", "tarzi", "tarzı", "rehberi",
@@ -322,7 +428,6 @@ def clean_filename_to_product(filename, video_id=None):
         elif len(w) > 2 and re.match(r'^[a-z]+$', w):
             clean_words.append(w.title())
 
-    # Eğer 1'den fazla anlamlı kelime kaldıysa ve hash değilse
     if len(clean_words) >= 1 and not raw_name.lower().startswith(('aq', '1101', '62d0', '78cd', '8d45', '3312')):
         prod_title = " ".join(clean_words).title()
         if "Tool" not in prod_title and "Gadget" not in prod_title:
@@ -330,7 +435,6 @@ def clean_filename_to_product(filename, video_id=None):
         return prod_title, "kitchen"
 
     # 3. Eğer dosya adı Instagram hash'i veya numaraysa (Örn: 1101 (1).mp4, AQMZu2...):
-    # Deterministic (sabit) hash kullanarak her videoya benzersiz bir viral ürün ata
     seed_str = filename
     if video_id is not None:
         seed_str = f"{video_id}_{filename}"
@@ -344,41 +448,33 @@ def generate_local_seo(product_name, category="kitchen", seed_idx=0):
     Her defasında FARKLI, 100% İngilizce, zengin ve dikkat çekici
     Pinterest Başlığı, Açıklaması ve Hashtaglerini üretir.
     """
-    # Deterministic veya rastgele çeşitlilik indeksi
     t_idx = (seed_idx + 3) % len(TITLE_TEMPLATES)
     h_idx = (seed_idx + 1) % len(HOOKS)
     b_idx = (seed_idx + 5) % len(BENEFITS)
     c_idx = (seed_idx + 7) % len(CALLS_TO_ACTION)
 
-    # 1. Başlık (Pinterest Pini İçin Başlık)
     title = TITLE_TEMPLATES[t_idx].format(product=product_name)
     if len(title) > 95:
         title = f"{product_name} - Smart Viral Find! ✨"
 
-    # 2. Hashtagler (Ürüne ve Kategoriye Özel)
     cat_tags = CATEGORY_HASHTAGS.get(category, CATEGORY_HASHTAGS["kitchen"])
-    # 3 kategori hashtagi seç
     selected_cat_tags = [cat_tags[(seed_idx + i) % len(cat_tags)] for i in range(3)]
     
-    # Ürün adından hashtag üret
     clean_slug = re.sub(r'[^a-zA-Z0-9]', '', product_name.split()[0]).lower()
     product_hashtag = f"#{clean_slug}" if len(clean_slug) > 2 else "#smartgadgets"
 
-    # Genel popüler hashtagler
     general_tags = ["#amazonfinds", "#musthaves", "#tiktokmademebuyit", "#lifehacks"]
     selected_gen_tags = [general_tags[(seed_idx + i) % len(general_tags)] for i in range(2)]
 
     hashtags_list = [product_hashtag] + selected_cat_tags + selected_gen_tags
     hashtags_str = " ".join(hashtags_list[:6])
 
-    # 3. Açıklama (Persuasive Copy + Call to Action + Hashtags)
     hook = HOOKS[h_idx].format(product=product_name)
     benefit = BENEFITS[b_idx]
     cta = CALLS_TO_ACTION[c_idx]
 
     description = f"{hook} {benefit}\n\n{cta}\n\n{hashtags_str}"
 
-    # 4. Pinterest Arama Konuları (Tags)
     tags_pool = [
         product_name,
         f"{category.title()} Gadgets",
@@ -395,28 +491,17 @@ def generate_local_seo(product_name, category="kitchen", seed_idx=0):
         "tags": pinterest_tags
     }
 
-def generate_product_content(product_name_or_filename, api_key=None, video_id=None):
+def generate_product_content(product_name_or_filename, api_key=None, video_id=None, video_path=None):
     """
-    Ana fonksiyon: Dosya adını veya ürün adını tarar;
-    Her video için tamamen FARKLI ve ürününe uygun başlık, açıklama ve etiket üretir.
+    Ana fonksiyon: 
+    1. Eğer video_path ve api_key verilmişse VİDEOYU GÖRSEL OLARAK TARAR!
+    2. Aksi halde dosya adı ve akıllı katalog üzerinden FARKLI başlık/açıklama üretir.
     """
+    if video_path and os.path.exists(video_path) and api_key and len(api_key.strip()) > 15:
+        vision_result = analyze_video_with_vision(video_path, api_key.strip())
+        if vision_result and vision_result.get("title"):
+            return vision_result
+
     product_name, category = clean_filename_to_product(product_name_or_filename, video_id=video_id)
     seed_idx = video_id if (video_id is not None) else random.randint(0, 1000)
     return generate_local_seo(product_name, category=category, seed_idx=seed_idx)
-
-if __name__ == "__main__":
-    test_files = [
-        "mutfak_sebze_dograyici_pro.mp4",
-        "ASMR_butter_cutting_video_creation_20261015223716.mp4",
-        "ASMR_cheese_slicing_video_creation_20261015223726.mp4",
-        "ASMR_portakal_doğrama_videosu_is…_20261012230633.mp4",
-        "1101 (1)(1).mp4",
-        "AQMZu2V7KQvaVpZgZW3XkO6u8y6Kkf51NBx.mp4"
-    ]
-    for i, tf in enumerate(test_files):
-        res = generate_product_content(tf, video_id=i+1)
-        print(f"--- TEST {i+1}: {tf} ---")
-        print(f"TITLE: {res['title']}")
-        print(f"DESC : {res['description'][:110]}...")
-        print(f"TAGS : {res['tags']}")
-        print()
