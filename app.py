@@ -288,8 +288,16 @@ async def generate_video_ai(request):
         return JSONResponse({"success": False, "message": "Video bulunamadı."}, status_code=404)
 
     settings = get_all_settings()
-    product_name = video.get("product_name") or clean_filename_to_product(video["filename"])
-    ai_data = generate_product_content(product_name, settings.get("gemini_api_key"))
+    video_path = video.get("filepath", "")
+    api_key = settings.get("gemini_api_key", "").strip()
+
+    ai_data = generate_product_content(
+        video["filename"],
+        api_key=api_key,
+        video_id=video_id,
+        video_path=video_path
+    )
+    product_name = ai_data.get("product_name") or video.get("product_name") or "Smart Viral Product"
 
     update_video(
         video_id,
@@ -301,6 +309,31 @@ async def generate_video_ai(request):
 
     add_log(f"Video #{video_id} ({product_name}) için AI içerikleri yenilendi.", "INFO")
     return JSONResponse({"success": True, "data": ai_data})
+
+async def scan_all_ai_api(request):
+    settings = get_all_settings()
+    api_key = settings.get("gemini_api_key", "").strip()
+    videos = get_videos(status="pending")
+    count = 0
+    for v in videos:
+        v_path = v.get("filepath", "")
+        ai_data = generate_product_content(
+            v["filename"],
+            api_key=api_key,
+            video_id=v["id"],
+            video_path=v_path
+        )
+        p_name = ai_data.get("product_name") or v.get("product_name") or "Smart Viral Product"
+        update_video(
+            v["id"],
+            title=ai_data["title"],
+            description=ai_data["description"],
+            tags=ai_data["tags"],
+            product_name=p_name
+        )
+        count += 1
+    add_log(f"Toplam {count} video yapay zeka ile taranıp başlık/açıklamaları yenilendi.", "INFO")
+    return JSONResponse({"success": True, "count": count, "message": f"{count} video yapay zeka ile tarandı ve güncellendi."})
 
 async def update_video_api(request):
     video_id = int(request.path_params["id"])
@@ -348,6 +381,7 @@ routes = [
     Route("/api/videos/upload", upload_videos, methods=["POST"]),
     Route("/api/videos/scan-folder", scan_folder, methods=["POST"]),
     Route("/api/videos/{id:int}/share", share_video_now, methods=["POST"]),
+    Route("/api/videos/scan-all-ai", scan_all_ai_api, methods=["POST"]),
     Route("/api/videos/{id:int}/generate-ai", generate_video_ai, methods=["POST"]),
     Route("/api/videos/{id:int}", update_video_api, methods=["PUT"]),
     Route("/api/videos/{id:int}", delete_video_api, methods=["DELETE"]),
