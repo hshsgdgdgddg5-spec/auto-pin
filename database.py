@@ -162,6 +162,48 @@ def delete_video(video_id):
     conn.commit()
     conn.close()
 
+def delete_videos_bulk(video_ids=None, delete_all=False, status=None):
+    """Toplu video silme fonksiyonu: veritabanından ve diskten siler"""
+    conn = get_db()
+    cursor = conn.cursor()
+    deleted_count = 0
+    
+    if delete_all:
+        rows = cursor.execute("SELECT id, filepath FROM videos").fetchall()
+        for r in rows:
+            if r["filepath"] and os.path.exists(r["filepath"]):
+                try:
+                    os.remove(r["filepath"])
+                except Exception:
+                    pass
+        cursor.execute("DELETE FROM videos")
+        deleted_count = len(rows)
+    elif status:
+        rows = cursor.execute("SELECT id, filepath FROM videos WHERE status = ?", (status,)).fetchall()
+        for r in rows:
+            if r["filepath"] and os.path.exists(r["filepath"]):
+                try:
+                    os.remove(r["filepath"])
+                except Exception:
+                    pass
+        cursor.execute("DELETE FROM videos WHERE status = ?", (status,))
+        deleted_count = len(rows)
+    elif video_ids:
+        for vid_id in video_ids:
+            row = cursor.execute("SELECT filepath FROM videos WHERE id = ?", (vid_id,)).fetchone()
+            if row and row["filepath"] and os.path.exists(row["filepath"]):
+                try:
+                    os.remove(row["filepath"])
+                except Exception:
+                    pass
+        placeholders = ",".join("?" * len(video_ids))
+        cursor.execute(f"DELETE FROM videos WHERE id IN ({placeholders})", tuple(video_ids))
+        deleted_count = len(video_ids)
+        
+    conn.commit()
+    conn.close()
+    return deleted_count
+
 def get_next_pending_video():
     conn = get_db()
     row = conn.execute("SELECT * FROM videos WHERE status = 'pending' ORDER BY id ASC LIMIT 1").fetchone()

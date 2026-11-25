@@ -10,7 +10,7 @@ from starlette.templating import Jinja2Templates
 from database import (
     init_db, get_all_settings, set_setting, get_videos,
     get_video_by_id, add_video, update_video, delete_video,
-    get_recent_logs, add_log
+    delete_videos_bulk, get_recent_logs, add_log
 )
 from automation import engine
 from pinterest_client import PinterestClient
@@ -348,6 +348,15 @@ async def delete_video_api(request):
     add_log(f"Video #{video_id} kuyruktan silindi.", "INFO")
     return JSONResponse({"success": True, "message": "Video silindi."})
 
+async def bulk_delete_videos_api(request):
+    data = await request.json()
+    ids = data.get("ids", [])
+    delete_all = data.get("all", False)
+    status = data.get("status", None)
+    count = delete_videos_bulk(video_ids=ids, delete_all=delete_all, status=status)
+    add_log(f"Toplu video silme: {count} video kuyruktan temizlendi.", "INFO")
+    return JSONResponse({"success": True, "count": count, "message": f"{count} video başarıyla silindi."})
+
 async def preview_ai(request):
     data = await request.json()
     product_name = data.get("product_name", "")
@@ -384,6 +393,7 @@ routes = [
     Route("/api/videos/scan-all-ai", scan_all_ai_api, methods=["POST"]),
     Route("/api/videos/{id:int}/generate-ai", generate_video_ai, methods=["POST"]),
     Route("/api/videos/{id:int}", update_video_api, methods=["PUT"]),
+    Route("/api/videos/bulk-delete", bulk_delete_videos_api, methods=["POST"]),
     Route("/api/videos/{id:int}", delete_video_api, methods=["DELETE"]),
     Route("/api/ai/preview", preview_ai, methods=["POST"]),
     Route("/api/automation/start", start_auto, methods=["POST"]),
