@@ -338,6 +338,11 @@ function renderVideos(videos) {
     completedCountEl.innerText = completed;
     summaryText.innerText = `${videos.length} video (${pending} sırada bekliyor)`;
 
+    const master = document.getElementById('checkSelectAll');
+    if (master) master.checked = false;
+    const delBtn = document.getElementById('btnDeleteSelected');
+    if (delBtn) delBtn.classList.add('hidden');
+
     if (videos.length === 0) {
         listEl.innerHTML = `
             <div class="p-8 text-center text-slate-500">
@@ -370,7 +375,8 @@ function renderVideos(videos) {
                     <!-- Sol: Video ve İçerik Detayları -->
                     <div class="space-y-3 flex-1">
                         <div class="flex items-center gap-3">
-                            <span class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-red-500 font-bold text-xs border border-slate-700">
+                            <input type="checkbox" class="video-checkbox w-4 h-4 rounded text-red-600 bg-slate-900 border-slate-700 cursor-pointer" data-id="${video.id}" onchange="updateSelectedCount()">
+                            <span class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-red-500 font-bold text-xs border border-slate-700 shrink-0">
                                 <i class="fas fa-play"></i>
                             </span>
                             <div>
@@ -685,4 +691,140 @@ function formatBytes(bytes) {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+// --- Toplu Video Silme Fonksiyonları ---
+function toggleBulkDeleteMenu() {
+    const el = document.getElementById('bulkDeleteDropdown');
+    if (el) el.classList.toggle('hidden');
+}
+
+document.addEventListener('click', function(e) {
+    const btn = document.getElementById('btnBulkMenu');
+    const menu = document.getElementById('bulkDeleteDropdown');
+    if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.add('hidden');
+    }
+});
+
+function toggleSelectAllVideos(master) {
+    const checkboxes = document.querySelectorAll('.video-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = master.checked;
+    });
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const checked = document.querySelectorAll('.video-checkbox:checked');
+    const btn = document.getElementById('btnDeleteSelected');
+    const countText = document.getElementById('selectedCountText');
+    const master = document.getElementById('checkSelectAll');
+    const allCbs = document.querySelectorAll('.video-checkbox');
+
+    if (master && allCbs.length > 0) {
+        master.checked = checked.length === allCbs.length;
+    }
+
+    if (btn && countText) {
+        if (checked.length > 0) {
+            btn.classList.remove('hidden');
+            countText.innerText = `Seçilenleri Sil (${checked.length})`;
+        } else {
+            btn.classList.add('hidden');
+            countText.innerText = `Seçilenleri Sil (0)`;
+        }
+    }
+}
+
+async function deleteSelectedVideos() {
+    const checked = document.querySelectorAll('.video-checkbox:checked');
+    if (checked.length === 0) {
+        alert('Lütfen silinecek videoları işaretleyin.');
+        return;
+    }
+
+    const ids = Array.from(checked).map(cb => parseInt(cb.dataset.id));
+    if (!confirm(`Seçilen ${ids.length} adet videoyu kuyruktan ve diskten kalıcı olarak silmek istediğinize emin misiniz?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/videos/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: ids })
+        });
+        const data = await res.json();
+        alert(data.message || `${ids.length} video silindi.`);
+        refreshData();
+    } catch (e) {
+        alert('Silme işleminde hata: ' + e);
+    }
+}
+
+async function deleteAllVideos() {
+    const dropdown = document.getElementById('bulkDeleteDropdown');
+    if (dropdown) dropdown.classList.add('hidden');
+
+    if (!confirm('DİKKAT: Kuyruktaki TÜM videoları (tamamı silinecek) kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz!')) {
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/videos/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ all: true })
+        });
+        const data = await res.json();
+        alert(data.message || 'Tüm videolar silindi.');
+        refreshData();
+    } catch (e) {
+        alert('Silme işleminde hata: ' + e);
+    }
+}
+
+async function deleteCompletedVideos() {
+    const dropdown = document.getElementById('bulkDeleteDropdown');
+    if (dropdown) dropdown.classList.add('hidden');
+
+    if (!confirm('Pinterest\'te başarıyla PAYLAŞILMIŞ olan tüm videoları kuyruktan temizlemek istiyor musunuz?')) {
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/videos/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'completed' })
+        });
+        const data = await res.json();
+        alert(data.message || 'Paylaşılan videolar temizlendi.');
+        refreshData();
+    } catch (e) {
+        alert('Silme işleminde hata: ' + e);
+    }
+}
+
+async function deleteFailedVideos() {
+    const dropdown = document.getElementById('bulkDeleteDropdown');
+    if (dropdown) dropdown.classList.add('hidden');
+
+    if (!confirm('Hata veren tüm videoları kuyruktan temizlemek istiyor musunuz?')) {
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/videos/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'failed' })
+        });
+        const data = await res.json();
+        alert(data.message || 'Hatalı videolar temizlendi.');
+        refreshData();
+    } catch (e) {
+        alert('Silme işleminde hata: ' + e);
+    }
 }
